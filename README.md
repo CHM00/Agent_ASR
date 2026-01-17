@@ -48,7 +48,7 @@ cd Agent_ASR
 pip install -r requirements.txt
 ```
 
-推荐依赖 (参考): funasr, modelscope, pymilvus, openai, webrtcvad, pyaudio, pygame, edge-tts, tavily-python, transformers, torch
+推荐依赖: `funasr, modelscope, pymilvus, openai, webrtcvad, pyaudio, pygame, edge-tts, tavily-python, transformers, torch`
 
 
 2. 模型下载与配置
