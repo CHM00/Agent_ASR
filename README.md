@@ -95,10 +95,8 @@ python SenseVoice_Agent_Main.py
 
 ## ⚠️ 注意事项
 
-
-硬件要求: 推荐使用 `NVIDIA GPU` 运行 `ASR` 和`声纹模型`以获得最佳延迟体验。`Local_Model.py` 会自动检测 CUDA。
-
-路径配置: 请务必检查 `Local_Model.py` 和 `SpeakerManager.py` 中的绝对路径，确保其在你的机器上有效。
+* **硬件要求**: 推荐使用 `NVIDIA GPU` 运行 `ASR` 和`声纹模型`以获得最佳延迟体验。`Local_Model.py` 会自动检测 CUDA。
+* **路径配置**: 请务必检查 `Local_Model.py` 和 `SpeakerManager.py` 中的绝对路径，确保其在你的机器上有效。
 
 ## 🤝 贡献
 
