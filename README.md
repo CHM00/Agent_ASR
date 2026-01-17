@@ -38,7 +38,7 @@
 
 ## 🚀 快速开始
 1. 环境准备
-确保你已安装 Python 3.8+，并拥有一个运行中的 Milvus 实例（Docker 或 Cloud）。
+确保你已安装 Python 3.10+，并拥有一个运行中的 Milvus 实例（Docker 或 Cloud）。
 ```bash
 # 克隆仓库
 git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
