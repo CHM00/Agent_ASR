@@ -15,10 +15,10 @@ from funasr import AutoModel
 from modelscope.pipelines import pipeline
 from pypinyin import pinyin, Style
 import re
-
+from SpeakerManager import SpeakerManager
 # --- 导入我们的大脑 ---
 from SenseVoice_Agent_Brain import SmartAgentBrain
-
+import glob
 # --- 配置 ---
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 AUDIO_RATE = 16000
@@ -53,31 +53,24 @@ is_speaking = False  # 是否正在播放语音
 is_processing = False  # 是否正在处理推理（ASR+LLM+TTS整个流程）
 
 # 声纹路径
-set_SV_enroll = r'.\SpeakerVerification_DIR\enroll_wav\\'
-
+# set_SV_enroll = r'.\SpeakerVerification_DIR\enroll_wav\\'
+set_SV_enroll = r'.\SpeakerVerification_DIR\users\\'
+temp_register_name = "" # 用于暂存即将注册的用户名
 # --- 初始化模型 ---
 print("正在初始化模型，请稍候...")
 
-# 1. 初始化 VAD
+# 初始化 VAD
 vad = webrtcvad.Vad()
 vad.set_mode(VAD_MODE)
 
-# 2. 初始化 SenseVoice (ASR)
-# 请确保你的模型路径正确，或者使用 modelscope 自动下载的路径
-model_dir = r"D:\ASR-LLM-TTS-master\ASR-LLM-TTS-master\ASR"
-model_senceVoice = AutoModel(model=model_dir, trust_remote_code=True, device="cuda:0")
 
-# 3. 初始化 CAM++ (声纹)
-sv_pipeline = pipeline(
-    task='speaker-verification',
-    model='D:\ASR-LLM-TTS-master\ASR-LLM-TTS-master\iic\CAM++',
-    model_revision='v1.0.0',
-    device="cuda:0"
-)
-
-# 4. 初始化 Agent 大脑 (连接 Milvus 和 LLM)
+# 初始化 Agent 大脑 (连接 Milvus 和 LLM)
 agent_brain = SmartAgentBrain()
+model_senceVoice = agent_brain.local_model.funasr_model
+sv_pipeline = agent_brain.local_model.CAM_model
 
+# 初始化多用户管理器
+spk_manager = SpeakerManager(set_SV_enroll, agent_brain.local_model.CAM_model, threshold=0.35)
 print(">>> 模型加载完成！系统启动！ <<<")
 
 
@@ -114,7 +107,7 @@ def system_speak(text):
 
     is_speaking = True
     segments_to_save.clear() # 清空之前的缓存，避免录入播报声音
-    print(f"🤖 Agent: {text}")
+    print(f"Agent Output: {text}")
     audio_file_count += 1
     filename = os.path.join(folder_path, f"reply_{audio_file_count}.mp3")
     asyncio.run(text_to_speech(text, filename))
@@ -126,15 +119,18 @@ def system_speak(text):
 
 # --- 核心推理线程 ---
 def Inference(audio_path):
-    global flag_sv_enroll, flag_KWS, flag_KWS_used, flag_sv_used, set_SV_enroll, is_processing, segments_to_save
+    global flag_sv_enroll, flag_KWS, flag_KWS_used, flag_sv_used, set_SV_enroll, is_processing, segments_to_save, temp_register_name
 
     is_processing = True  # 开始处理，暂停录音
     segments_to_save.clear()
+    current_user_id = "Guest"  # 默认为访客
     try:
         # 0. 检查声纹文件夹是否为空 (初次运行逻辑)
-        if flag_sv_used and not os.path.exists(os.path.join(set_SV_enroll, "enroll_0.wav")):
-            print("未检测到声纹，进入注册模式...")
-            system_speak("请先说一句话注册声纹，需超过三秒哦。")
+        existing_users = glob.glob(os.path.join(set_SV_enroll, "*.wav"))
+        if flag_sv_used and not existing_users:
+            print("声纹库为空，进入首个用户注册模式...")
+            system_speak("欢迎使用，我需要先认识你。请说一句话大于3s的句子用于注册声纹。")
+            temp_register_name = "主人"  # 默认第一个人叫主人
             flag_sv_enroll = 1
             return
 
@@ -143,7 +139,7 @@ def Inference(audio_path):
             res = model_senceVoice.generate(input=audio_path, cache={}, language="auto", use_itn=False)
             raw_text = res[0]['text'].split(">")[-1].strip()
             pinyin_text = extract_pinyin(raw_text)
-            print(f"👂 听到: {raw_text} (拼音: {pinyin_text})")
+            print(f"听到: {raw_text} (拼音: {pinyin_text})")
         except Exception as e:
             print(f"ASR Error: {e}")
             return
@@ -156,32 +152,45 @@ def Inference(audio_path):
                 print(">>> 唤醒词匹配成功！")
                 flag_KWS = 1
                 # 唤醒成功, 播报
-                system_speak("我在呢, 主人!")
+                system_speak("你好, 我在呢!")
                 return
             else:
                 # 如果没唤醒，直接忽略
                 if not flag_KWS:
                     print("未唤醒...")
                     return
-
-        # 3. 声纹验证 (SV)
+        # 2. 声纹对比 (CAM)
         if flag_sv_used:
             try:
-                enroll_path = os.path.join(set_SV_enroll, "enroll_0.wav")
-                score = sv_pipeline([enroll_path, audio_path])
-                print(f"🔐 声纹得分: {score['score']}")
+                identified_user, score = spk_manager.identify(audio_path)
 
-                if score['score'] < thred_sv:
-                    system_speak("声纹验证失败，我不能听你的指令。")
-                    flag_KWS = 0  # 重置唤醒
-                    return
+                if identified_user == "Unknown":
+                    system_speak("身份验证失败，我不认识你。")
+                    flag_KWS = 0
+                    return  # 拒绝执行
+
+                current_user_id = identified_user
+                print(f"识别成功，当前用户: {current_user_id}")
+
             except Exception as e:
                 print(f"SV Error: {e}")
                 return
 
-        # 4. 调用 Agent 大脑处理 (核心结合点)
+        # 4. 调用 Agent 处理
         # 使用 asyncio.run 在同步线程中调用异步逻辑
-        reply = asyncio.run(agent_brain.process_user_query(raw_text))
+        reply = asyncio.run(agent_brain.process_user_query(raw_text, user_id=current_user_id))
+
+        # 检查是否是注册指令
+        if reply.startswith("ACTION_REGISTER:"):
+            target_name = reply.split(":")[1]
+            if target_name == "Unknown_User":
+                system_speak("好的，请告诉我你怎么称呼？")
+            else:
+                temp_register_name = target_name
+                flag_sv_enroll = 1  # 开启注册模式
+                system_speak(f"好的，准备录入【{target_name}】的声纹。请在听到‘滴’声后，清晰地说一句话，至少3秒。")
+                # 说完后, 进入下一轮 audio_recorder
+            return
 
         # 5. 播报结果
         system_speak(reply)
@@ -195,14 +204,14 @@ def Inference(audio_path):
 
 # --- 录音线程 ---
 def audio_recorder():
-    global recording_active, last_active_time, segments_to_save, last_vad_end_time, audio_file_count, flag_sv_enroll
+    global recording_active, last_active_time, segments_to_save, last_vad_end_time, audio_file_count, flag_sv_enroll, temp_register_name
 
     p = pyaudio.PyAudio()
     stream = p.open(format=pyaudio.paInt16, channels=AUDIO_CHANNELS, rate=AUDIO_RATE, input=True,
                     frames_per_buffer=CHUNK)
     audio_buffer = []
 
-    print("🎤 麦克风监听中...")
+    print("麦克风监听中...")
 
     while recording_active:
         data = stream.read(CHUNK)
@@ -243,7 +252,13 @@ def audio_recorder():
             save_path = f"{OUTPUT_DIR}/audio_tmp.wav"
             if flag_sv_enroll:
                 os.makedirs(set_SV_enroll, exist_ok=True)
-                save_path = os.path.join(set_SV_enroll, "enroll_0.wav")
+                # 如果没有名字，就用时间戳兜底
+                if not temp_register_name:
+                    final_name = f"User_{int(time.time())}.wav"
+                else:
+                    final_name = f"{temp_register_name}.wav"
+
+                save_path = os.path.join(set_SV_enroll, final_name)
 
             # 写入文件
             wf = wave.open(save_path, 'wb')
@@ -256,9 +271,16 @@ def audio_recorder():
             segments_to_save.clear()  # 清空缓存
 
             if flag_sv_enroll:
-                print("声纹注册文件已保存。")
-                flag_sv_enroll = 0
-                system_speak("声纹注册成功！现在可以叫我了。")
+                print(f"声纹注册文件已保存: {save_path}")
+                flag_sv_enroll = 0  # 关闭开关
+                temp_register_name = ""  # 清空暂存名
+                # SpeakerManager 刷新用户列表
+                try:
+                    spk_manager.refresh_speakers()
+                except:
+                    pass
+
+                system_speak("注册成功！我已经记住你的声音了。")
             else:
                 # 开启新线程推理，避免阻塞录音
                 t = threading.Thread(target=Inference, args=(save_path,))
