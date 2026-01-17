@@ -110,6 +110,5 @@ python SenseVoice_Agent_Main.py
 
 欢迎提交 Issue 和 PR！如果你有更好的记忆管理策略或更轻量的模型实现，请随时分享。
 
-## 📜 协议
-
-MIT License
+## 🙏 Acknowledgments
+ASR-LLM-TTS (https://github.com/ABexit/ASR-LLM-TTS)
