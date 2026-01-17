@@ -41,8 +41,8 @@
 确保你已安装 Python 3.10+，并拥有一个运行中的 Milvus 实例（Docker 或 Cloud）。
 ```bash
 # 克隆仓库
-git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
-cd your-repo-name
+git clone https://github.com/CHM00/Agent_ASR.git
+cd Agent_ASR
 
 # 安装依赖
 pip install -r requirements.txt
