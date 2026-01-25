@@ -23,6 +23,18 @@
 <img width="1408" height="768" alt="Gemini_Generated_Image_vvj5vovvj5vovvj5(1)" src="https://github.com/user-attachments/assets/3611130c-f044-4d2b-95f2-a3d07da6e85c" />
 
 
+## 📋 项目任务清单
+### ✅ 已完成
+- [x] 多用户自动声纹识别
+- [x] 长短期记忆库，短期记忆（依赖Memory）, 长期记忆（依赖Milvus）
+- [x] 用户偏好的动态更新
+- [x] 本地端侧部署与推理
+- [x] 编写 README.md 基础文档与环境配置说明
+
+### 📌 待完成
+- [ ] 基于知识图谱的长期记忆（Nebula图数据库） 
+- [ ] 会话记忆功能
+
 
 
 ## 📂 项目结构
