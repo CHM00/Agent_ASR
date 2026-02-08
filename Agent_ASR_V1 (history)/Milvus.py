@@ -49,9 +49,8 @@ class MilvusClass:
     def connect_milvus(self):
         """连接 Milvus 数据库并初始化记忆集合"""
         try:
-            # 本地部署的Milvus
-            connections.connect(alias="link", uri="http://47.113.202.238:19530/")
-            print("Milvus 连接成功")
+            connections.connect(alias="link", uri=self.MILVUS_URI, token=self.MILVUS_TOKEN)
+            print("✅ [Brain] Milvus 连接成功")
 
             self.init_food_collection()
 
@@ -185,13 +184,8 @@ class MilvusClass:
                 [text],  # text 列
                 [int(time.time())]  # timestamp 列
             ]
-            res = self.memory_collection.insert(data)
-            # self.memory_collection.insert(data)
-            # 获取插入后的主键 ID
-            inserted_id = res.primary_keys[0]
-            print(f"[Milvus] 写入成功 ID: {inserted_id}")
-            return inserted_id  # 返回这个 ID
-            # print(f"[Memory] 已写入 {user_id} 的记忆: {text}")
+            self.memory_collection.insert(data)
+            print(f"[Memory] 已写入 {user_id} 的记忆: {text}")
 
 
     def embedding(self, text):
@@ -348,5 +342,5 @@ class MilvusClass:
 if __name__ == '__main__':
     milvus_instance = MilvusClass()
     milvus_instance.connect_milvus()
-    milvus_instance.deleteMilvus("User_Memory")
+    # milvus_instance.deleteMilvus("User_Memory")
     # milvus_instance.Batch_insert_food(r"D:\ASR-LLM-TTS-master\ASR-LLM-TTS-master\food_category.txt", one_bulk=100)

@@ -17,7 +17,7 @@ from pypinyin import pinyin, Style
 import re
 from SpeakerManager import SpeakerManager
 # --- 导入我们的大脑 ---
-from SenseVoice_Agent_Brain_Copy_New import SmartAgentBrain
+from SenseVoice_Agent_Brain import SmartAgentBrain
 import glob
 # --- 配置 ---
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
@@ -25,9 +25,9 @@ AUDIO_RATE = 16000
 AUDIO_CHANNELS = 1
 CHUNK = 1024
 VAD_MODE = 3
-OUTPUT_DIR = "./output"
+OUTPUT_DIR = "../output"
 NO_SPEECH_THRESHOLD = 1
-folder_path = "./Test_Agent/"
+folder_path = "../Test_Agent/"
 
 # 确保目录存在
 os.makedirs(OUTPUT_DIR, exist_ok=True)

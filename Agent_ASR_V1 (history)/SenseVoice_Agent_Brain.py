@@ -11,7 +11,6 @@ from Milvus import MilvusClass
 from tavily import TavilyClient
 from Local_Model import Load_Model
 import threading
-from Knowledge_Grpah import KnowledgeGraph
 # 加载环境变量(.env文件)
 load_dotenv()
 # import os
@@ -52,21 +51,17 @@ class SmartAgentBrain:
         self.memory_collection = self.milvus.memory_collection
         self.collection = self.milvus.food_collection
 
-        # 初始化图谱
-        self.kg = KnowledgeGraph()
-        self.kg.connect()
-
         # 初始化本地类
         self.local_model  = Load_Model()
         self.LOCAL_LLM = LOCAL_LLM
 
     async def update_memory_logic(self, new_fact, user_id):
         """
-        核心记忆更新逻辑：检索 -> 比较 -> 删除旧的 -> 写入新的
+        核心记忆更新逻辑：检索 -> 比较 -> (删除旧的) -> 写入新的
         """
         if not self.memory_collection: return
 
-        print(f"Memory 正在评估新记忆: {new_fact}")
+        print(f"[Memory] 正在评估新记忆: {new_fact}")
 
         # 1. 先去搜一下有没有相关个人的旧记忆
         similar_memories = self.milvus.search_memory(new_fact, user_id=user_id, top_k=3)
@@ -113,10 +108,10 @@ class SmartAgentBrain:
                         temperature=0.0
                     )
                     decision = check_res.choices[0].message.content.strip()
-                print(f"Memory 记忆冲突裁决: {decision}")
+                print(f"[Memory] 记忆冲突裁决: {decision}")
 
                 if "IGNORE" in decision:
-                    print("Memory 信息冗余，跳过写入。")
+                    print("[Memory] 信息冗余，跳过写入。")
                     return  # 直接结束，不写入
 
                 if "DELETE:" in decision:
@@ -128,12 +123,12 @@ class SmartAgentBrain:
                     ids_to_delete = [int(i) for i in ids]
 
             except Exception as e:
-                print(f"Memory 裁决过程出错: {e}")
+                print(f"[Memory] 裁决过程出错: {e}")
 
         # 3. 执行操作
         # 如果有要删除的旧记忆，先删除
         if ids_to_delete:
-            print(f"Memory 准备删除冲突记忆: {ids_to_delete} (所属用户: {user_id})")
+            print(f"[Memory] 准备删除冲突记忆: {ids_to_delete} (所属用户: {user_id})")
             self.milvus.delete_memory_by_ids(ids_to_delete, user_id)
 
         # 写入新记忆 (使用原来的 insert 逻辑，但要确保调用的是 milvus 实例的方法)
@@ -144,206 +139,87 @@ class SmartAgentBrain:
 
             self.milvus.insert_memory(new_fact, user_id)
 
-            print(f"Memory 写入新记忆: {new_fact}, 关于用户 {user_id}")
+            print(f"[Memory] 写入新记忆: {new_fact}, 关于用户 {user_id}")
 
-    # ================= 核心修改：基于图谱的记忆提取 =================
     async def extract_and_save_memory(self, user_text, user_id):
-        """
-        从对话中提取结构化三元组并存入图谱
-        """
-        print(f"正在分析用户记忆: {user_text}")
-
-        # 要求 LLM 输出 JSON 格式的三元组
+        """[后台任务] 提取事实并触发更新流程"""
+        print(f"开始处理用户输入: {user_text}")
         prompt = f"""
-        ### 任务
-        从用户的话中提取**长期用户画像**，并转化为结构化的 JSON 数据以便存入知识图谱。
-
-        ### 提取规则
-        1. 识别用户 (User) 与 实体 (Entity) 之间的关系。
-        2. 仅提取以下关系类型：
-           - LIKES/DISLIKES: 喜好
-           - ALLERGY: 过敏
-           - HABIT: 习惯
-           - IS_A: 身份/职业 (如: 我是学生)
-           - LIVES_IN: 居住地 (如: 我住在北京, 我定居上海)  <-- 新增强调
-           - STATUS: 状态 (如: 我单身, 我刚搬家)
-        3. 如果没有长期有效的信息，输出 "NONE"。
-
-        ### 输出格式 (JSON List)
-        [
-            {{"relation": "RELATION_TYPE", "target": "Entity_Name", "type": "Entity_Type"}}
-        ]
-
-        ### 示例
-        输入: "我不吃香菜，我对花生过敏"
-        输出: [
-            {{"relation": "DISLIKES", "target": "香菜", "type": "Food"}},
-            {{"relation": "ALLERGY", "target": "花生", "type": "Ingredient"}}
-        ]
-
-        输入: "我是一个程序员"
-        输出: [{{"relation": "IS_A", "target": "程序员", "type": "Job"}}]
-
-        输入: "今天天气不错"
-        输出: NONE
+        ### 任务：提取用户长期有效核心画像信息
+        1.  **提取范围（仅以下4类长期信息）**
+            - 喜好：长期稳定的兴趣、饮食偏好、爱好（例：喜欢吃甜食、长期喜欢打篮球）
+            - 习惯：长期保持的行为模式（例：每天早上跑步、习惯早睡早起）
+            - 身体状况：长期稳定的健康状态（例：对牛奶过敏、有慢性咽炎）
+            - 计划：长期规划或固定安排（例：打算今年考驾照、计划每月读两本书）
+        2.  **排除条件（这些信息不提取）**
+            - 短期临时需求：比如"今天想吃火锅"、"明天要去逛街"
+            - 一次性行为：比如"昨天看了电影"、"上周买了衣服"
+            - 无明确长期属性的内容：比如"这个电影很好看"、"今天天气不错"
+        3.  **输出规则**
+            - 仅提取用户明确表述的**长期有效**信息，不做任何推测、扩展、总结
+            - 信息必须直接来自用户输入，不能添加额外词汇
+            - 格式：用陈述句直接描述，语言简洁
+            - 如果没有符合要求的长期信息，**严格输出大写的 NONE**，不要输出其他任何内容
+        4.  **示例参考**
+            示例1：
+            用户输入: "我对海鲜过敏，一直都不能吃"
+            输出: 用户对海鲜过敏
+            示例2：
+            用户输入: "我每天都要喝一杯咖啡，这是多年的习惯"
+            输出: 用户每天喝一杯咖啡
+            示例3：
+            用户输入: "我今天想吃麻辣烫"
+            输出: NONE
+            示例4：
+            用户输入: "我打算明年去国外留学，已经规划很久了"
+            输出: 用户打算明年去国外留学
+            示例5：
+            用户输入: "昨天我去跑步了"
+            输出: NONE
 
         ### 用户输入
         "{user_text}"
 
-        ### 你的输出 (仅JSON)
+        ### 最终输出
         """
-
         try:
-            messages = [{"role": "user", "content": prompt}]
 
-            # 调用 LLM (复用你原有的逻辑)
-            if self.LOCAL_LLM:
-                res = self.local_model.llm_chat(messages)
-                content = res.strip()
-            else:
-                res = await self.aclient.chat.completions.create(
-                    model=self.LLM_MODEL,
-                    messages=messages,
-                    temperature=0.0  # 结构化抽取需要低温度
-                )
-                content = res.choices[0].message.content.strip()
-            print("对话提取内容: ", content)
-            # 解析结果并写入图谱
-            if "NONE" not in content and "{" in content:
-                # 清洗 Markdown 标记
-                content = content.replace("```json", "").replace("```", "")
-                import json
-                triplets = json.loads(content)
-
-                for t in triplets:
-                    new_relation = t.get("relation")
-                    target_name = t.get("target")
-                    t_type = t.get("type", "Entity")
-
-                    # 构造事实文本 存在 Milvus
-                    fact_text = f"用户 {new_relation} {target_name}"
-
-                    # 冲突检查 检查 Milvus 有没有矛盾的旧记忆
-                    similar_memories = self.milvus.search_memory(fact_text, user_id, top_k=10)
-                    print("召回的相似记忆:", similar_memories)
-                    if t_type == "Food" and new_relation == "LIKES":
-                        # 尝试召回过敏史
-                        allergy_res = self.milvus.search_memory(f"用户 ALLERGY {target_name}", user_id, top_k=3)
-                        # 去重合并
-                        existing_ids = set(m['id'] for m in similar_memories)
-                        for am in allergy_res:
-                            if am['id'] not in existing_ids:
-                                similar_memories.append(am)
-
-
-                    # 利用大语言模型决策 (决定是 ADD 还是 DELETE/UPDATE)
-                    decision = await self.detect_conflict_with_llm(fact_text, similar_memories, user_input=user_text)
-
-                    # 处理冗余
-                    if decision['action'] == "IGNORE":
-                        print(f" Mem0 记忆冗余，跳过: {fact_text}")
-                        continue
-
-                    ids_to_delete = decision.get("ids", [])
-                    # 存在冲突
-                    if decision['action'] == "DELETE" and ids_to_delete:
-                        print(f" 删除冲突记忆: {ids_to_delete}")
-                        self.milvus.delete_memory_by_ids(ids_to_delete, user_id)
-                        for mid in ids_to_delete:
-                            self.kg.delete_relation_by_mid(mid)
-
-                    # 只有 DELETE 或 NONE 时才执行
-                    milvus_id = self.milvus.insert_memory(fact_text, user_id)
-                    if milvus_id:
-                        self.kg.upsert_relation(user_id, new_relation, target_name, t_type, milvus_id)
-
-
-        except Exception as e:
-            print(f" 记忆提取或图谱写入失败: {e}")
-
-    async def detect_conflict_with_llm(self, new_memory_text, existing_memories_from_milvus, user_input=""):
-        """
-        LLM 裁判：引入原始语境，判断冲突
-        """
-        if not existing_memories_from_milvus: return {"action": "NONE"}
-
-        context_str = "\n".join([
-            f"ID:{m['id']} | 内容: {m['text']} (相似度:{m['score']:.2f})"
-            for m in existing_memories_from_milvus
-        ])
-
-        prompt = f"""
-        你是一个记忆一致性管理员。请根据【原始对话】和【新提取信息】，判断与【现有记忆】的冲突。
-
-        【原始对话语境】(最高优先级):
-        "{user_input}"
-        (注意：如果用户在对话中明确表示了"不再"、"搬家"、"换工作"、"改做"等变更意图，请坚决删除旧状态。)
-
-        【现有记忆】:
-        {context_str}
-
-        【新提取信息】:
-        {new_memory_text}
-
-        请严格根据以下规则裁决：
-        1. **显式终止 (DELETE)**: 
-           - 原始对话中出现 "不让做了"、"戒了"、"改喝..." 等，必须删除旧习惯。
-           - 例如：原话"医生不让跑步了，改游泳"，旧记忆"晨跑" -> DELETE。
-        2. **状态/身份变更 (DELETE)**: 
-           - 原始对话中出现 "考上公务员"、"回老家"、"搬家"，意味着旧的 "工作压力大"、"住在北京" 等状态已失效 -> DELETE。
-        3. **属性冲突 (DELETE)**: 
-           - "喜欢辣" vs "一点辣都不能吃" -> DELETE。
-        4. **冗余 (IGNORE)**: 内容完全一致。
-        5. **共存 (NONE)**: 无逻辑冲突。
-
-        输出格式 (JSON):
-        - 需删除: {{"action": "DELETE", "ids": [123]}}
-        - 冗余: {{"action": "IGNORE"}}
-        - 无操作: {{"action": "NONE"}}
-        """
-
-        try:
             messages = [{"role": "user", "content": prompt}]
             if self.LOCAL_LLM:
+                # 基于本地LLM
+                print("本地LLM")
                 res = self.local_model.llm_chat(messages)
-                content = res.strip()
+                print("提取记忆结果: ", res)
+                fact = res.strip()
             else:
-                res = await self.aclient.chat.completions.create(
-                    model=self.LLM_MODEL, messages=messages, temperature=0.0
+                # 基于API
+                print("基于API")
+                res = await asyncio.wait_for(
+                    self.aclient.chat.completions.create(
+                        model=self.LLM_MODEL,
+                        messages=messages,
+                        temperature=0.1
+                    ),
+                    timeout=30.0  # 30秒超时
                 )
-                content = res.choices[0].message.content.strip()
-
-            print(f" 裁决结果 {content}")
-
-            import json
-            import re
-            match = re.search(r'\{.*\}', content, re.DOTALL)
-            if match:
-                return json.loads(match.group())
-            return {"action": "NONE"}
-
+                # res = await self.aclient.chat.completions.create(
+                #     model=self.LLM_MODEL,
+                #     messages=messages,
+                #     temperature=0.1
+                # )
+                fact = res.choices[0].message.content.strip()
+            print("fact: ", fact)
+            if fact and "NONE" not in fact:
+                await self.update_memory_logic(fact, user_id)
         except Exception as e:
-            print(f" 裁决失败: {e}")
-            return {"action": "NONE"}
+            print(f"记忆提取错误: {e}")
 
-    def recall_memories(self, query, user_id):
-        """
-            双重检索：语义 + 图谱
-        """
-        final_results = []
+    def recall_memories(self, query, user_id, top_k=2):
+        # 传递 user_id 给 milvus
+        results = self.milvus.search_memory(query, user_id=user_id, top_k=top_k)
+        memories = [item["text"] for item in results]
+        return memories
 
-        # 语义检索 (Milvus)
-        vec_res = self.milvus.search_memory(query, user_id, top_k=3)
-        for r in vec_res:
-            final_results.append(f"[语义] {r['text']}")
-
-        # 图谱检索 (Neo4j)
-        graph_res = self.kg.search_user_graph(user_id)
-        for r in graph_res:
-            # 如果图里的信息文本和语义检索的高度重合
-            final_results.append(f"[图谱] {r}")
-
-        return list(set(final_results))
 
     def search_food_db(self, query_text):
         """查询 Milvus 数据库"""
@@ -371,7 +247,6 @@ class SmartAgentBrain:
             print(f"[Brain] 检索出错: {e}")
         return None
 
-
     def search_web(self, query, max_results=2):
         """联网搜索（带重试）"""
         print(f"[Brain] 正在联网搜索: {query} ...")
@@ -398,7 +273,7 @@ class SmartAgentBrain:
         """
             意图识别 -> (查库 OR 联网 OR 闲聊) -> 生成回复
         """
-        print(f"处理请求，当前用户: {user_id}")
+        print(f"[Brain] 处理请求，当前用户: {user_id}")
 
         # --- 回忆特定用户记忆成分 ---
         related_memories = self.recall_memories(user_text, user_id)
@@ -457,7 +332,7 @@ class SmartAgentBrain:
                 raw_json = route_res.choices[0].message.content.replace("```json", "").replace("```", "").strip()
             print("raw_json:", raw_json)
             intent = json.loads(raw_json)
-            print(f"意图分析: {intent}")
+            print(f"[Brain] 意图分析: {intent}")
 
             final_response = ""
 
@@ -485,16 +360,9 @@ class SmartAgentBrain:
                 3.  **优先级**：优先使用【搜索结果】的信息；搜索结果无相关内容时，再用【用户记忆】；两者都无则回复"暂无相关信息"
                 4.  **禁止内容**：不解释、不补充、不扩展，不出现括号、引号等特殊符号
 
-                ### 【用户记忆 (图谱数据)】
-                (格式为: 关系类型 目标实体)
+                ### 【用户记忆】
                 你正在和 {user_id} 对话。
                 {memory_str}
-                
-                ### 关系解释
-                - LIKES: 用户喜欢
-                - DISLIKES: 用户不喜欢
-                - ALLERGY: 用户过敏
-                - HABIT: 用户习惯
 
                 ### 【搜索结果】
                 {search_ctx}
@@ -516,7 +384,7 @@ class SmartAgentBrain:
                 输出：你对芒果过敏，不能吃
 
                 示例3：
-                用户记忆：（空）    
+                用户记忆：（空）
                 搜索结果：（空）
                 用户问题：明天会下雨吗
                 输出：暂无相关信息
@@ -598,7 +466,7 @@ class SmartAgentBrain:
 if __name__ == "__main__":
     brain = SmartAgentBrain()
     # brain.local_model.llm_chat(messages = [{"role": "user", "content": "明天北京天气怎么样？"}])
-    asyncio.run(brain.extract_and_save_memory("最近膝盖受伤了，医生不让跑步了，以后早上改游泳了。", "主人"))
+    asyncio.run(brain.extract_and_save_memory("明天北京天气怎么样？", "主人"))
     # brain.extract_and_save_memory("明天北京天气怎么样？")
     # print("result: ", res)
     # print(asyncio.run(brain.process_user_query("我想吃三鲜乌冬面")))
