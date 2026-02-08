@@ -146,7 +146,6 @@ class SmartAgentBrain:
 
             print(f"Memory 写入新记忆: {new_fact}, 关于用户 {user_id}")
 
-    # ================= 核心修改：基于图谱的记忆提取 =================
     async def extract_and_save_memory(self, user_text, user_id):
         """
         从对话中提取结构化三元组并存入图谱

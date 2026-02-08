@@ -17,7 +17,7 @@ from pypinyin import pinyin, Style
 import re
 from SpeakerManager import SpeakerManager
 # --- 导入我们的大脑 ---
-from SenseVoice_Agent_Brain_Copy_New import SmartAgentBrain
+from SenseVoice_Agent_Brain import SmartAgentBrain
 import glob
 # --- 配置 ---
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
