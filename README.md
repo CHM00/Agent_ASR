@@ -27,6 +27,10 @@
 <img width="1408" height="768" alt="Gemini_Generated_Image_vvj5vovvj5vovvj5(1)" src="https://github.com/user-attachments/assets/3611130c-f044-4d2b-95f2-a3d07da6e85c" />
 
 
+### Neo4j数据库
+<img width="500" height="500" alt="Gemini_Generated_Image_vvj5vovvj5vovvj5(1)" src="fig/neo4j.png" />
+
+
 ## 📋 项目任务清单
 ### ✅ 已完成
 - [x] 多用户自动声纹识别
