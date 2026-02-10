@@ -43,7 +43,6 @@
 - [x] 微调本地模型构建个性化模型-用于智能座舱交互
 
 ### 📌 待完成
-- [ ] 会话记忆功能
 
 
 
@@ -53,6 +52,8 @@
 .
 ├── Agent_ASR_V1(history)      # 历史版本(未实现知识图谱抽取与存储)
 ├── Fine-Tuning                # 大模型微调相关代码（Qwen3-4B-Instruct-2507）
+├── fig                        # 项目相关图片资源
+├── LLM deployment             # 大模型本地部署: Xinference/VLLM/Transformers/Ollama
 ├── Knowledge_Graph.py         # 知识图谱处理：负责从文本中抽取实体与关系，构建 Neo4j 图数据库
 ├── Local_Model.py             # 模型加载器：单例模式管理 LLM, ASR, CAM++ 模型的加载
 ├── SpeakerManager.py          # 身份管理：处理声纹注册、加载与 1:N 匹配逻辑
