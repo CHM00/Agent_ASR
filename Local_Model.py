@@ -2,7 +2,16 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from funasr import AutoModel
 from modelscope.pipelines import pipeline
+from cosyvoice.cli.cosyvoice import CosyVoice
 
+import yaml
+import ruamel.yaml
+import torchaudio
+# 修复 yaml 问题 (你提供的代码中的补丁)
+if not hasattr(yaml.Loader, 'max_depth'):
+    yaml.Loader.max_depth = None
+if not hasattr(ruamel.yaml.Loader, 'max_depth'):
+    ruamel.yaml.Loader.max_depth = None
 
 class Load_Model:
     def __init__(self):
@@ -11,12 +20,15 @@ class Load_Model:
         self.llm_model_path = r"D:\Qwen"
         self.funasr_model_path = r"D:\ASR-LLM-TTS-master\ASR-LLM-TTS-master\ASR"
         self.CAM_model_path = r"D:\ASR-LLM-TTS-master\ASR-LLM-TTS-master\iic\CAM++"
+        # cosyvoice语音播报
+        self.cosyvoice_model_path = r"D:\ASR-LLM-TTS-master\ASR-LLM-TTS-master\iic\CosyVoice-300M"
 
         self.llm_model, self.tokenizer = self.load_local_llm()
         self.funasr_model = self.load_funasr()
         self.CAM_model = self.load_cam()
+        self.cosyvoice_model = self.load_cosyvoice()
 
-    # 1. 全局加载本地模型和Tokenizer（只加载一次，避免重复耗时）
+    # 全局加载本地模型和Tokenizer（只加载一次，避免重复耗时）
     def load_local_llm(self):
         # 加载模型：自动适配设备（CPU/GPU）、自动 dtype
         model = AutoModelForCausalLM.from_pretrained(
@@ -52,8 +64,18 @@ class Load_Model:
         )
         return sv_pipeline
 
+    def load_cosyvoice(self):
+        try:
+            # load_jit=True 加速推理，fp16=True 节省显存
+            model = CosyVoice(self.cosyvoice_model_path, load_jit=True, load_onnx=False, fp16=True)
+            print(f"CosyVoice 加载成功，支持音色: {model.list_avaliable_spks()}")
+            return model
+        except Exception as e:
+            print(f"CosyVoice 加载失败: {e}")
+            return None
 
-    # 2. 本地推理
+
+    # 本地推理
     def llm_chat(self, messages, system_prompt=None):
         # 构建标准化对话模板（适配 Qwen 的格式）
         # Step 1: Tokenizer 编码（文本 → 数字ID）
