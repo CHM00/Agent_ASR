@@ -16,6 +16,7 @@ from typing import AsyncGenerator
 import re
 # 加载环境变量(.env文件)
 load_dotenv()
+from intent_router_bert import BertIntentRouter
 # import os
 # os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7897'
 # os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7897'
@@ -61,6 +62,9 @@ class SmartAgentBrain:
         self.local_model  = Load_Model()
         self.LOCAL_LLM = LOCAL_LLM
 
+        # 使用bert路由模型
+        self.intent_router = BertIntentRouter(model_dir="./BERT-Finetuing/final_intent_model")
+
     async def stream_chat_llm(self, messages, temperature=0.7) -> AsyncGenerator[str, None]:
         """封装 LLM 流式调用接口"""
         if self.LOCAL_LLM:
@@ -89,11 +93,11 @@ class SmartAgentBrain:
         """
         print(f"处理请求流式，用户: {user_id}")
 
-        # 1. 召回记忆
+        # 召回记忆
         related_memories = self.recall_memories(user_text, user_id)
         memory_str = f"【关于 {user_id} 的记忆】: {';'.join(related_memories)}" if related_memories else ""
 
-        # 2. 意图路由
+        # 意图路由
         intent = await self._route_intent(user_text)
         print(f"意图分析: {intent}")
 
@@ -103,7 +107,7 @@ class SmartAgentBrain:
         # 定义标点符号切分点，用于流式语音播报
         split_punc = ["。", "！", "？", "；", "...", ".", "!", "?"]
 
-        # --- 分支 A: 点餐业务 ---
+        # 点餐业务
         if intent.get("Call_elm"):
             food_name = intent.get("Food_candidate")
             matched = self.search_food_db(food_name)
@@ -111,7 +115,7 @@ class SmartAgentBrain:
             yield reply
             full_response = reply
 
-        # --- 分支 B: 联网搜索 ---
+        # 联网搜索
         elif intent.get("Need_Search"):
             search_ctx = self.search_web(intent.get("Need_Search"))
             gen_prompt = self._build_search_prompt(user_id, memory_str, search_ctx, user_text)
@@ -123,12 +127,12 @@ class SmartAgentBrain:
                     full_response += sentence_buffer
                     sentence_buffer = ""
 
-        # --- 分支 C: 注册声纹 ---
+        # 注册声纹
         elif intent.get("Register_Action"):
             yield f"ACTION_REGISTER:{intent.get('Register_Action')}"
             return
 
-        # --- 分支 D: 闲聊/通用对话 ---
+        # 闲聊/通用对话
         else:
             system_msg = f"你叫小千，是一个活泼可爱的语音助手，现在的对话者是 {user_id},回答请简短。"
             if memory_str:
@@ -153,51 +157,61 @@ class SmartAgentBrain:
         # 更新历史与后台记忆任务
         self._post_process(user_text, full_response, user_id)
 
-    async def _route_intent(self, user_text):
-        """意图路由解析"""
-        route_prompt = f"""
-                ### 角色设定
-                你是一个意图识别API。仅输出JSON格式结果，不要包含Markdown标记或其他文字。
+    async def _route_intent(self, user_text: str) -> dict:
+        """
+        使用 BERT 模型进行意图路由解析，返回结构化的意图结果
+        """
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, self.intent_router.route, user_text)
+        print("result:", result)
+        return result
 
-                ### 字段定义
-                - Call_elm (bool): 是否包含点餐/外卖意图(想吃、点菜等)。
-                - Food_candidate (str): 提取具体的菜名/食物。
-                - Need_Search (str): 提取需要联网搜索的关键词(天气/百科/价格等)。
-                - Register_Action (str): 提取注册意图。若包含名字提取名字(如"我是张三"); 若想注册但未提供名字输出"Unknown_User"; 否则为空。
 
-                ### 参考示例 (请严格模仿以下格式)
-                输入: "我想吃皮蛋瘦肉粥"
-                JSON: {{"Call_elm": true, "Food_candidate": "皮蛋瘦肉粥", "Need_Search": "", "Register_Action": ""}}
-
-                输入: "查询明天北京的天气"
-                JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "明天北京天气", "Register_Action": ""}}
-
-                输入: "我要注册新用户"
-                JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "", "Register_Action": "Unknown_User"}}
-
-                输入: "我是张三，把我的声音录进去"
-                JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "", "Register_Action": "张三"}}
-
-                输入: "随便聊聊"
-                JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "", "Register_Action": ""}}
-
-                ### 当前任务
-                输入: "{user_text}"
-                JSON: """
-        messages = [{"role": "user", "content": route_prompt}]
-        try:
-            # 路由解析直接获取结果(采取非流式)
-            if self.LOCAL_LLM:
-                res = self.local_model.llm_chat(messages)
-            else:
-                res_obj = await self.aclient.chat.completions.create(model=self.LLM_MODEL, messages=messages,
-                                                                     temperature=0.1)
-                res = res_obj.choices[0].message.content
-
-            raw_json = re.sub(r'```json|```', '', res).strip()
-            return json.loads(raw_json)
-        except:
-            return {"Call_elm": False, "Need_Search": "", "Register_Action": ""}
+    # async def _route_intent(self, user_text):
+    #     """意图路由解析"""
+    #     route_prompt = f"""
+    #             ### 角色设定
+    #             你是一个意图识别API。仅输出JSON格式结果，不要包含Markdown标记或其他文字。
+    #
+    #             ### 字段定义
+    #             - Call_elm (bool): 是否包含点餐/外卖意图(想吃、点菜等)。
+    #             - Food_candidate (str): 提取具体的菜名/食物。
+    #             - Need_Search (str): 提取需要联网搜索的关键词(天气/百科/价格等)。
+    #             - Register_Action (str): 提取注册意图。若包含名字提取名字(如"我是张三"); 若想注册但未提供名字输出"Unknown_User"; 否则为空。
+    #
+    #             ### 参考示例 (请严格模仿以下格式)
+    #             输入: "我想吃皮蛋瘦肉粥"
+    #             JSON: {{"Call_elm": true, "Food_candidate": "皮蛋瘦肉粥", "Need_Search": "", "Register_Action": ""}}
+    #
+    #             输入: "查询明天北京的天气"
+    #             JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "明天北京天气", "Register_Action": ""}}
+    #
+    #             输入: "我要注册新用户"
+    #             JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "", "Register_Action": "Unknown_User"}}
+    #
+    #             输入: "我是张三，把我的声音录进去"
+    #             JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "", "Register_Action": "张三"}}
+    #
+    #             输入: "随便聊聊"
+    #             JSON: {{"Call_elm": false, "Food_candidate": "", "Need_Search": "", "Register_Action": ""}}
+    #
+    #             ### 当前任务
+    #             输入: "{user_text}"
+    #             JSON: """
+    #     messages = [{"role": "user", "content": route_prompt}]
+    #     try:
+    #         # 路由解析直接获取结果(采取非流式)
+    #         if self.LOCAL_LLM:
+    #             res = self.local_model.llm_chat(messages)
+    #         else:
+    #             res_obj = await self.aclient.chat.completions.create(model=self.LLM_MODEL, messages=messages,
+    #                                                                  temperature=0.1)
+    #             res = res_obj.choices[0].message.content
+    #
+    #         raw_json = re.sub(r'```json|```', '', res).strip()
+    #         return json.loads(raw_json)
+    #     except:
+    #         return {"Call_elm": False, "Need_Search": "", "Register_Action": ""}
 
     def _build_search_prompt(self, user_id, memory, search_ctx, query):
         return f"结合记忆：{memory} 和搜索结果：{search_ctx}，极简回答用户：{query}。不超过30字。"
@@ -227,7 +241,7 @@ class SmartAgentBrain:
 
         print(f"Memory 正在评估新记忆: {new_fact}")
 
-        # 1. 先去搜一下有没有相关个人的旧记忆
+        # 先去搜一下有没有相关个人的旧记忆
         similar_memories = self.milvus.search_memory(new_fact, user_id=user_id, top_k=3)
         # similar_memories = self.milvus.search_memory(new_fact, top_k=3)
 
@@ -236,7 +250,7 @@ class SmartAgentBrain:
 
         ids_to_delete = []
 
-        # 2. 如果找到了相似记忆，需要 LLM 介入判断冲突
+        # 如果找到了相似记忆，需要 LLM 介入判断冲突
         if candidates:
             candidates_str = "\n".join([f"ID:{m['id']} 内容:{m['text']}" for m in candidates])
 
@@ -296,7 +310,7 @@ class SmartAgentBrain:
             self.milvus.delete_memory_by_ids(ids_to_delete, user_id)
 
         # 写入新记忆 (使用原来的 insert 逻辑，但要确保调用的是 milvus 实例的方法)
-        # 注意：这里调用的是 Milvus 类里的 insert 逻辑，或者你在这里手动 insert
+        # 这里调用的是 Milvus 类里的 insert 逻辑
         vec = self.milvus.embedding(new_fact)
         if vec:
             import time
@@ -305,7 +319,7 @@ class SmartAgentBrain:
 
             print(f"Memory 写入新记忆: {new_fact}, 关于用户 {user_id}")
 
-    # ================= 核心修改：基于图谱的记忆提取 =================
+    # 基于图谱的记忆提取
     async def extract_and_save_memory(self, user_text, user_id):
         """
         从对话中提取结构化三元组并存入图谱
@@ -506,7 +520,6 @@ class SmartAgentBrain:
         graph_res = self.kg.search_user_graph(user_id)
         for r in graph_res:
             # 简单去重：如果图里的信息文本和语义检索的高度重合，可以略过
-            # 这里直接添加用于演示
             final_results.append(f"图谱 {r}")
 
         return list(set(final_results))  # 简单去重
@@ -521,15 +534,25 @@ class SmartAgentBrain:
         print(f"正在联网搜索: {query} ...")
         for attempt in range(3):
             try:
+                # 耗时时间长的原因在于web 检索的过程，这里使用了深度搜索，增加了延迟
                 response = self.client.search(
                     query=query,
-                    search_depth="advanced"
+                    search_depth="basic"
                 )
                 results = response["results"][:max_results]
                 print("result:", results)
                 if not results:
                     return ""
-                return "\n".join([f"标题: {r['title']}\n摘要: {r['content'][:300]}" for r in results])
+                # 减少上下文数量，只保留标题和摘要的前部分
+                compact = []
+                for r in results:
+                    title = (r.get("title") or "")[:40]
+                    content = (r.get("content") or "").replace("\n", " ")
+                    content = " ".join(content.split())[:160]
+                    compact.append(f"标题:{title} 摘要:{content}")
+                return "\n".join(compact)
+
+                # return "\n".join([f"标题: {r['title']}\n摘要: {r['content'][:300]}" for r in results])
             except Exception as e:
                 print(f"搜索尝试 {attempt + 1} 失败: {e}")
                 if attempt < 2:

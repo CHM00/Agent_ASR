@@ -34,7 +34,7 @@ class KnowledgeGraph:
             for q in queries:
                 session.run(q)
 
-    # --- 核心 1: 插入关系 (带 Milvus ID 绑定) ---
+    # 插入关系(milvus_id与neo4j关系绑定)
     def upsert_relation(self, user_id, relation, target, target_type, milvus_id):
         """
         插入图谱，并将 Milvus 的 ID 记录在关系上，便于联动删除。
@@ -54,7 +54,7 @@ class KnowledgeGraph:
                         milvus_id=milvus_id)
             print(f"[Graph] 关系已建立: {user_id} -[{relation}]-> {target} (绑定的MilvusID: {milvus_id})")
 
-    # --- 核心 2: 根据 Milvus ID 删除关系 ---
+    # 根据 Milvus ID 删除关系
     def delete_relation_by_mid(self, milvus_id):
         """
         当 Milvus 删除了某条记忆，图谱也通过 mid 找到对应边并删除
@@ -68,7 +68,7 @@ class KnowledgeGraph:
             session.run(cypher, milvus_id=milvus_id)
             print(f"[Graph] 已联动删除关系 (MilvusID: {milvus_id})")
 
-    # --- 核心 3: 图谱检索 ---
+    # 3: 图谱检索
     def search_user_graph(self, user_id):
         """查询用户的一阶关系"""
         cypher = """
@@ -97,7 +97,7 @@ class KnowledgeGraph:
                 session.run("DROP CONSTRAINT user_id_unique IF EXISTS")
                 session.run("DROP CONSTRAINT food_name_unique IF EXISTS")
 
-            print("✅ 数据库已清空，索引已移除。")
+            print("数据库已清空，索引已移除。")
         except Exception as e:
             print(f"清空失败: {e}")
 
