@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentASR - 智能语音助手</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!--
+
+顶部导航栏 -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">🤖</span>
+                    <span class="logo-text">AgentASR</span>
+                </div>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">连接中...</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="user-selector">
+                    <span class="user-label">
+                        <i class="fas fa-user-circle"></i>
+                        <span>用户</span>
+                    </span>
+                    <select id="userId" class="user-select">
+                        <option value="Guest">👤 访客</option>
+                    </select>
+                    <button id="refreshUsers" class="icon-btn" title="刷新用户列表">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主聊天区域 -->
+        <main class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <!-- 欢迎消息 -->
+                <div class="message system">
+                    <div class="message-content">
+                        <div class="greeting-emoji">👋</div>
+                        <p class="greeting-text">你好！我是 AgentASR 智能语音助手</p>
+                        <div class="features">
+                            <div class="feature-item">
+                                <span class="feature-icon">🎙️</span>
+                                <span class="feature-text">点击录音按钮进行语音对话</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">⌨️</span>
+                                <span class="feature-text">直接在输入框中打字对话</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">👤</span>
+                                <span class="feature-text">注册声纹以获得个性化体验</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部输入区域 -->
+        <footer class="input-area">
+            <div class="input-container">
+                <!-- 录音控制 -->
+                <button id="recordBtn" class="record-btn" title="开始录音">
+                    <i class="fas fa-microphone"></i>
+                    <span class="record-text">录音</span>
+                </button>
+
+                <!-- 文本输入 -->
+                <div class="text-input-wrapper">
+                    <input
+                        type="text"
+                        id="messageInput"
+                        class="message-input"
+                        placeholder="输入消息或使用语音..."
+                        autocomplete="off"
+                    />
+                    <button id="sendBtn" class="send-btn" title="发送消息">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 声纹注册按钮 -->
+            <button id="registerBtn" class="register-btn" title="注册声纹">
+                <i class="fas fa-fingerprint"></i>
+                <span>注册声纹</span>
+            </button>
+        </footer>
+
+        <!-- 录音中的提示 -->
+        <div class="recording-overlay" id="recordingOverlay">
+            <div class="recording-content">
+                <div class="recording-wave">
+                    <div class="wave-circle wave-1"></div>
+                    <div class="wave-circle wave-2"></div>
+                    <div class="wave-circle wave-3"></div>
+                </div>
+                <div class="recording-text">
+                    <i class="fas fa-microphone fa-pulse"></i>
+                    <span>正在录音...</span>
+                </div>
+                <button id="stopRecordBtn" class="stop-record-btn">
+                    <i class="fas fa-stop-circle"></i>
+                    <span>停止录音</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 音频播放器（隐藏） -->
+    <audio id="audioPlayer" class="hidden"></audio>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
