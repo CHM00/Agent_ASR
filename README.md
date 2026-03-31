@@ -30,6 +30,8 @@
 ### Neo4j数据库
 <img width="500" height="500" alt="Gemini_Generated_Image_vvj5vovvj5vovvj5(1)" src="fig/neo4j.png" />
 
+### 前端界面
+<img width="989" height="947" alt="image" src="https://github.com/user-attachments/assets/f109b6ea-7586-48e4-8952-35db7d4d7c8f" />
 
 ## 📋 项目任务清单
 ### ✅ 已完成
