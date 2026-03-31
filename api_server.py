@@ -1,5 +1,4 @@
 """
-FastAPI Server for AgentASR_HTTP
 提供语音识别、文本对话、语音合成、声纹管理等 Web 服务
 """
 import os
@@ -38,14 +37,10 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时加载模型"""
     global agent_brain, speaker_manager
 
-    print("========================================")
-    print("🚀 AgentASR FastAPI Server 启动中...")
-    print("========================================")
-
     # 启动时初始化 SmartAgentBrain
-    print("⏳ 正在加载模型...")
+    print("正在加载模型...")
     agent_brain = SmartAgentBrain(LOCAL_LLM=False)
-    print("✅ SmartAgentBrain 初始化完成")
+    print("SmartAgentBrain 初始化完成")
 
     # 初始化声纹管理器
     speaker_manager = SpeakerManager(
@@ -53,21 +48,21 @@ async def lifespan(app: FastAPI):
         agent_brain.local_model.CAM_model,
         threshold=0.35
     )
-    print("✅ SpeakerManager 初始化完成")
+    print("SpeakerManager 初始化完成")
 
     print("========================================")
-    print("🎉 服务启动完成！")
-    print(f"📡 API 文档: http://localhost:8000/docs")
-    print(f"🌐 前端界面: http://localhost:8000/static/")
+    print("服务启动完成！")
+    print(f"API 文档: http://localhost:8000/docs")
+    print(f"前端界面: http://localhost:8000/static/")
     print("========================================")
 
     yield
 
     # 关闭时清理
-    print("🛑 服务关闭中...")
+    print("服务关闭中...")
     if agent_brain and agent_brain.aclient:
         await agent_brain.aclient.close()
-    print("✅ 清理完成")
+    print("清理完成")
 
 
 # 创建 FastAPI 应用
