@@ -2,6 +2,14 @@
 .idea/
 .vscode/
 
+# 环境变量与密钥文件
+.env
+.env.*
+*.env
+*.pem
+*.key
+runtime/
+
 # Python 缓存
 __pycache__/
 *.py[cod]

@@ -126,6 +126,7 @@ kiwisolver==1.4.9
 langchain==1.2.3
 langchain-core==1.2.7
 langdetect==1.0.9
+langfuse==4.5.0
 langgraph==1.0.6
 langgraph-checkpoint==4.0.0
 langgraph-prebuilt==1.0.6
@@ -164,7 +165,6 @@ networkx==3.4.2
 nodeenv==1.10.0
 notebook==7.5.1
 notebook_shim==0.2.4
-neo4j
 numba==0.63.1
 numpy==1.26.4
 omegaconf==2.3.0

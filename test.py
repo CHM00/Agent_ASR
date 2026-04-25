@@ -1,10 +1,11 @@
+import os
 from neo4j import GraphDatabase, basic_auth
 from neo4j.exceptions import Neo4jError
 
 
-NEO4J_URI = "bolt://47.113.202.238:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "Zchm0903"
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 
 class Neo4jConnectionTest:
@@ -60,6 +61,8 @@ class Neo4jConnectionTest:
 if __name__ == "__main__":
     conn = None
     try:
+        if not NEO4J_PASSWORD:
+            raise ValueError("环境变量 NEO4J_PASSWORD 未设置，拒绝使用明文默认密码。")
         # 初始化连接
         conn = Neo4jConnectionTest(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
         # 运行测试查询
